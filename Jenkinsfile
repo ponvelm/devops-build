@@ -1,79 +1,51 @@
 pipeline {
     agent any
-
     environment {
-        // DockerHub credentials stored in Jenkins with ID = "dockerhub"
-        DOCKERHUB = credentials('dockerhub')
+        DEV_IMAGE = "ponvel123/dev:latest"
+        PROD_IMAGE = "ponvel123/prod:latest"
+        DOCKERHUB_CREDENTIALS = "ec2-ssh-key" // Your Docker Hub credentials ID
     }
-
     stages {
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                checkout scm
+                git branch: "${env.BRANCH_NAME}", url: 'https://github.com/ponvelm/devops-build.git'
             }
         }
-
-        stage('Install Dependencies & Build React App') {
+        stage('Build Docker') {
             steps {
-                sh '''
-                echo "📦 Installing dependencies..."
-                npm install
-                echo "⚡ Building React App..."
-                npm run build
-                '''
+                sh 'chmod +x build.sh'
+                sh './build.sh'
             }
         }
-
-        stage('Build & Push Docker Image') {
+        stage('Push Docker') {
             steps {
                 script {
-                    def dockerRepo = ""
-                    
-                    // Select DockerHub repo based on branch
-                    if (env.BRANCH_NAME == "dev") {
-                        dockerRepo = "ponvel123/dev"
-                    } else if (env.BRANCH_NAME == "main") {
-                        dockerRepo = "ponvel123/prod"
-                    } else {
-                        error("❌ Unsupported branch: ${env.BRANCH_NAME}")
+                    withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}", 
+                                                     usernameVariable: 'DOCKER_USER', 
+                                                     passwordVariable: 'DOCKER_PASS')]) {
+                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                        if (env.BRANCH_NAME == 'dev') {
+                            sh "docker push ${DEV_IMAGE}"
+                        } else if (env.BRANCH_NAME == 'main') {
+                            sh "docker push ${PROD_IMAGE}"
+                        }
                     }
-
-                    sh """
-                    echo "🔑 Logging into DockerHub..."
-                    echo "${DOCKERHUB_PSW}" | docker login -u "${DOCKERHUB_USR}" --password-stdin
-                    
-                    echo "🐳 Building Docker image..."
-                    docker build -t ${dockerRepo}:${BUILD_NUMBER} .
-                    docker tag ${dockerRepo}:${BUILD_NUMBER} ${dockerRepo}:latest
-                    
-                    echo "📤 Pushing Docker image to DockerHub..."
-                    docker push ${dockerRepo}:${BUILD_NUMBER}
-                    docker push ${dockerRepo}:latest
-                    """
                 }
             }
         }
-
-        // (Optional) Deployment stage for later
-        stage('Deploy to Server') {
-            when {
-                branch 'main'
-            }
+        stage('Deploy') {
             steps {
-                sh '''
-                echo "🚀 Deploying to AWS EC2..."
-                ./deploy.sh
-                '''
+                sh 'chmod +x deploy.sh'
+                sh './deploy.sh'
             }
         }
     }
-
     post {
-        success {
-            echo "✅ Build & Push successful for branch: ${env.BRANCH_NAME}"
+        always {
+            echo "Pipeline completed for branch: ${env.BRANCH_NAME}"
         }
         failure {
-            echo "❌ Build failed for branch: ${env.BRANCH_NAME}"
+            echo "Pipeline failed!"
         }
     }
 }
