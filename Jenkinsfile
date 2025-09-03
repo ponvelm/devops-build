@@ -2,38 +2,78 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_CREDENTIALS = credentials('dockerhub-creds')
-        DOCKER_USER = "${DOCKER_CREDENTIALS_USR}"
-        DOCKER_PASS = "${DOCKER_CREDENTIALS_PSW}"
+        // DockerHub credentials stored in Jenkins with ID = "dockerhub"
+        DOCKERHUB = credentials('dockerhub')
     }
 
     stages {
-        stage('Build Docker Image') {
+        stage('Checkout Code') {
             steps {
-                sh 'docker build -t myapp:latest .'
+                checkout scm
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Install Dependencies & Build React App') {
+            steps {
+                sh '''
+                echo "📦 Installing dependencies..."
+                npm install
+                echo "⚡ Building React App..."
+                npm run build
+                '''
+            }
+        }
+
+        stage('Build & Push Docker Image') {
             steps {
                 script {
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-
+                    def dockerRepo = ""
+                    
+                    // Select DockerHub repo based on branch
                     if (env.BRANCH_NAME == "dev") {
-                        sh 'docker tag myapp:latest ponvel123/dev:latest'
-                        sh 'docker push ponvel123/dev:latest'
-                    } else if (env.BRANCH_NAME == "master") {
-                        sh 'docker tag myapp:latest ponvel123/prod:latest'
-                        sh 'docker push ponvel123/prod:latest'
+                        dockerRepo = "ponvel123/dev"
+                    } else if (env.BRANCH_NAME == "main") {
+                        dockerRepo = "ponvel123/prod"
+                    } else {
+                        error("❌ Unsupported branch: ${env.BRANCH_NAME}")
                     }
+
+                    sh """
+                    echo "🔑 Logging into DockerHub..."
+                    echo "${DOCKERHUB_PSW}" | docker login -u "${DOCKERHUB_USR}" --password-stdin
+                    
+                    echo "🐳 Building Docker image..."
+                    docker build -t ${dockerRepo}:${BUILD_NUMBER} .
+                    docker tag ${dockerRepo}:${BUILD_NUMBER} ${dockerRepo}:latest
+                    
+                    echo "📤 Pushing Docker image to DockerHub..."
+                    docker push ${dockerRepo}:${BUILD_NUMBER}
+                    docker push ${dockerRepo}:latest
+                    """
                 }
             }
         }
 
-        stage('Deploy') {
-            steps {
-                sh './deploy.sh'
+        // (Optional) Deployment stage for later
+        stage('Deploy to Server') {
+            when {
+                branch 'main'
             }
+            steps {
+                sh '''
+                echo "🚀 Deploying to AWS EC2..."
+                ./deploy.sh
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Build & Push successful for branch: ${env.BRANCH_NAME}"
+        }
+        failure {
+            echo "❌ Build failed for branch: ${env.BRANCH_NAME}"
         }
     }
 }
