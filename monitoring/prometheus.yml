@@ -8,36 +8,31 @@ rule_files:
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: ["localhost:9093"]
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   # Scrape Prometheus itself
   - job_name: "prometheus"
     static_configs:
-      - targets: ["localhost:9090"]
+      - targets: ["prometheus:9090"]
 
-  # Scrape Node Exporter (system metrics: CPU, memory, disk, etc.)
-  - job_name: "node_exporter"
+  # Scrape Node Exporter
+  - job_name: "node"
     static_configs:
-      - targets: ["localhost:9100"]
+      - targets: ["node_exporter:9100"]
 
-  # Scrape Blackbox Exporter to check React App availability
+  # Scrape Blackbox Exporter for React App health
   - job_name: "react-app-availability"
     metrics_path: /probe
     params:
-      module: [http_2xx]  # checks HTTP 200 response
+      module: [http_2xx]
     static_configs:
       - targets:
-          - http://13.60.189.24  # React app public URL
+          - http://react-app:80   # React app inside Docker network
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
       - source_labels: [__param_target]
         target_label: instance
       - target_label: __address__
-        replacement: localhost:9115  # Blackbox Exporter address
-
-  # Scrape Blackbox Exporter itself
-  - job_name: "blackbox_exporter"
-    static_configs:
-      - targets: ["localhost:9115"]
+        replacement: blackbox_exporter:9115
