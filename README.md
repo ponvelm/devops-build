@@ -259,7 +259,9 @@ Configure alert rule to send notification if container stops.
 
 **Jenkins to access using public IP **
 http://16.171.146.160:8080/ 
-**Prometheus to access using public IP **
-13.60.189.24:9090
+**Prometheus to showing health **
+http://13.60.189.24:9090/targets?
+**Prometheus to showing alert **
+http://13.60.189.24:9090/alerts
 
 
